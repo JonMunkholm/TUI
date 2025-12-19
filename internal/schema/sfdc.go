@@ -1,0 +1,31 @@
+package schema
+
+// SfdcFieldSpecs defines the expected CSV columns for Salesforce Opportunity reports.
+var SfdcFieldSpecs = []FieldSpec{
+	{Name: "Opportunity ID Casesafe", Type: FieldText, Required: true},
+	{Name: "Opportunity Product Casesafe ID", Type: FieldText, Required: true},
+	{Name: "Opportunity Name", Type: FieldText, Required: true},
+	{Name: "Account Name", Type: FieldText, Required: true},
+	{Name: "Close Date", Type: FieldDate, Required: true},
+	{Name: "Booked Date", Type: FieldDate, Required: true},
+	{Name: "Fiscal Period", Type: FieldText, Required: true},
+	{Name: "Payment Schedule", Type: FieldText, Required: true},
+	{Name: "Payment Due", Type: FieldText, Required: true},
+	{Name: "Contract Start Date", Type: FieldDate, Required: true},
+	{Name: "Contract End Date", Type: FieldDate, Required: true},
+	{Name: "Term in Months_deprecated", Type: FieldNumeric, Required: true},
+	{Name: "Product Name", Type: FieldText, Required: true},
+	{Name: "Deployment Type", Type: FieldText, Required: true},
+	{Name: "Amount", Type: FieldNumeric, Required: true},
+	{Name: "Quantity", Type: FieldNumeric, Required: true},
+	{Name: "List Price", Type: FieldNumeric, Required: true},
+	{Name: "Sales Price", Type: FieldNumeric, Required: true},
+	{Name: "Total Price", Type: FieldNumeric, Required: true},
+	{Name: "Start Date", Type: FieldDate, Required: true},
+	{Name: "End Date", Type: FieldDate, Required: true},
+	{Name: "Term in Months", Type: FieldNumeric, Required: true},
+	{Name: "Product Code", Type: FieldText, Required: true},
+	{Name: "Total Amount Due - Customer", Type: FieldNumeric, Required: true},
+	{Name: "Total Amount Due - Partner", Type: FieldNumeric, Required: true},
+	{Name: "Active Product", Type: FieldBool, Required: true},
+}
