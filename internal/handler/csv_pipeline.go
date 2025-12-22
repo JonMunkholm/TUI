@@ -243,13 +243,28 @@ func processUploadFile(
 			return fmt.Errorf("operation cancelled at line %d: %w", csvLineNum, err)
 		}
 
+		// Use savepoint to isolate each insert - PostgreSQL aborts entire transaction on any error
+		savepointName := fmt.Sprintf("sp_%d", i)
+		if _, err := tx.Exec(ctx, fmt.Sprintf("SAVEPOINT %s", savepointName)); err != nil {
+			return fmt.Errorf("failed to create savepoint at line %d: %w", csvLineNum, err)
+		}
+
 		ok, err := handler.Insert(ctx, txQueries, arg)
 		if err != nil {
+			// Rollback to savepoint to recover transaction state
+			if _, rbErr := tx.Exec(ctx, fmt.Sprintf("ROLLBACK TO SAVEPOINT %s", savepointName)); rbErr != nil {
+				return fmt.Errorf("failed to rollback savepoint at line %d: %w", csvLineNum, rbErr)
+			}
 			failedRecords = append(failedRecords, rowFailed(
 				fmt.Sprintf("line %d: db error: %s", csvLineNum, err.Error()),
 				row,
 			))
 			continue
+		}
+
+		// Release savepoint on success to free resources
+		if _, err := tx.Exec(ctx, fmt.Sprintf("RELEASE SAVEPOINT %s", savepointName)); err != nil {
+			return fmt.Errorf("failed to release savepoint at line %d: %w", csvLineNum, err)
 		}
 
 		if !ok {
@@ -319,10 +334,11 @@ type ValidatedRow map[string]string
 
 // MakeHeaderIndex creates a HeaderIndex from a CSV header row.
 // This should be called once per file, then reused for all rows.
+// Uses csv.CleanHeader to handle Excel formula prefixes and other artifacts.
 func MakeHeaderIndex(header []string) HeaderIndex {
 	idx := make(HeaderIndex, len(header))
 	for i, h := range header {
-		key := strings.ToLower(strings.TrimSpace(h))
+		key := csv.CleanHeader(h)
 		idx[key] = i
 	}
 	return idx

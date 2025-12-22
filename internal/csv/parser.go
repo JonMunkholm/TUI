@@ -2,12 +2,14 @@
 package csv
 
 import (
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 // MaxFileSize is the maximum allowed CSV file size (100MB).
@@ -18,8 +20,35 @@ var MaxFileSize int64 = 100 * 1024 * 1024
 // Some CSV exports have metadata rows before the actual header.
 var MaxHeaderSearchRows = 20
 
+// sanitizeUTF8 replaces invalid UTF-8 byte sequences with the Unicode replacement character.
+// This handles CSV files exported from Excel with Windows-1252 or other legacy encodings.
+func sanitizeUTF8(data []byte) []byte {
+	if utf8.Valid(data) {
+		return data
+	}
+
+	// Replace invalid sequences with replacement character
+	var buf bytes.Buffer
+	buf.Grow(len(data))
+
+	for len(data) > 0 {
+		r, size := utf8.DecodeRune(data)
+		if r == utf8.RuneError && size == 1 {
+			// Invalid byte - replace with replacement character
+			buf.WriteRune('\uFFFD')
+			data = data[1:]
+		} else {
+			buf.WriteRune(r)
+			data = data[size:]
+		}
+	}
+
+	return buf.Bytes()
+}
+
 // Read reads all records from a CSV file.
 // It checks file size before reading to prevent OOM attacks.
+// Invalid UTF-8 byte sequences are replaced with the Unicode replacement character.
 func Read(path string) ([][]string, error) {
 	// Check file size before reading to prevent OOM
 	info, err := os.Stat(path)
@@ -31,18 +60,20 @@ func Read(path string) ([][]string, error) {
 			filepath.Base(path), MaxFileSize/(1024*1024), info.Size()/(1024*1024))
 	}
 
-	f, err := os.Open(path)
+	// Read entire file and sanitize UTF-8
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return [][]string{}, fmt.Errorf("open file %q: %w", filepath.Base(path), err)
+		return [][]string{}, fmt.Errorf("read file %q: %w", filepath.Base(path), err)
 	}
-	defer f.Close()
+	data = sanitizeUTF8(data)
 
-	r := csv.NewReader(f)
+	r := csv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1 // allow variable row lengths
+	r.LazyQuotes = true    // allow bare quotes in fields (common in real-world CSVs)
 
 	records, err := r.ReadAll()
 	if err != nil {
-		return [][]string{}, fmt.Errorf("read file %q: %w", filepath.Base(path), err)
+		return [][]string{}, fmt.Errorf("parse file %q: %w", filepath.Base(path), err)
 	}
 
 	return records, nil
@@ -76,15 +107,18 @@ func Write(path string, rows [][]string) error {
 
 // FindHeaderRow searches for a header row matching the required columns.
 // Returns the 0-based row index where the header was found.
+// Invalid UTF-8 byte sequences are replaced with the Unicode replacement character.
 func FindHeaderRow(path string, required []string) (int, error) {
-	f, err := os.Open(path)
+	// Read entire file and sanitize UTF-8
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return -1, fmt.Errorf("open file %q: %w", filepath.Base(path), err)
+		return -1, fmt.Errorf("read file %q: %w", filepath.Base(path), err)
 	}
-	defer f.Close()
+	data = sanitizeUTF8(data)
 
-	r := csv.NewReader(f)
+	r := csv.NewReader(bytes.NewReader(data))
 	r.FieldsPerRecord = -1 // allow variable row lengths
+	r.LazyQuotes = true    // allow bare quotes in fields (common in real-world CSVs)
 
 	// Scan up to MaxHeaderSearchRows looking for the header
 	for i := 0; i < MaxHeaderSearchRows; i++ {
@@ -120,6 +154,12 @@ func EqualHeaders(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// CleanHeader cleans a header value for use as a map key.
+// Applies CleanCell and lowercases the result for case-insensitive matching.
+func CleanHeader(s string) string {
+	return strings.ToLower(CleanCell(s))
 }
 
 // CleanCell removes common CSV artifacts from a cell value:
